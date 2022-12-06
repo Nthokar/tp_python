@@ -1,0 +1,98 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Hi</title>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+
+.row {
+  margin-left:-5px;
+  margin-right:-5px;
+}
+
+.column {
+  float: left;
+  width: 50%;
+  padding: 5px;
+}
+
+/* Clearfix (clear floats) */
+.row::after {
+  content: "";
+  clear: both;
+  display: table;
+}
+
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+  width: 100%;
+  border: 1px solid #ddd;
+}
+
+th, td {
+  text-align: left;
+  padding: 16px;
+  border:1px solid black;
+}
+</style>
+</head>
+<body>
+    <h1>Привет {{ name }}!</h1>
+    <img src="/home/nthokar/PycharmProjects/pythonProject1/graph.png" width="1200"><br>
+
+  </ul>
+    <table>
+        <tr>
+            <th>Год</th>
+            <th>Средняя зарплата</th>
+            <th>Средняя зарплата - {{name}}</th>
+            <th>Количество вакансий</th>
+            <th>Количество вакансий - {{name}}</th>
+        </tr>
+    {% for key in items %}
+        <tr>
+            <td style="font-weight: normal">{{key}}</td>
+            <td style="font-weight: normal">{{items[key][0]}}</td>
+            <td style="font-weight: normal">{{items[key][1]}}</td>
+            <td style="font-weight: normal">{{items[key][2]}}</td>
+            <td style="font-weight: normal">{{items[key][3]}}</td>
+        </tr>
+    {% endfor %}
+    </table>
+    <h2>Статистика по городам</h2>
+    <div class="row">
+        <div class="column">
+            <table>
+                <tr>
+                    <th>Город</th>
+                    <th>Уровень зарплат</th>
+                </tr>
+                {% for key in items2 %}
+                <tr>
+                    <td style="font-weight: normal">{{key}}</td>
+                    <td style="font-weight: normal">{{items2[key][0]}}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+        <div class="column">
+            <table>
+                <tr>
+                    <th>Город</th>
+                    <th>Доля вакансий</th>
+                </tr>
+                {% for key in items2 %}
+                <tr>
+                    <td style="font-weight: normal">{{key}}</td>
+                    <td style="font-weight: normal">{{items2[key][1]}}%</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+    </div>
+</body>
+</html>
