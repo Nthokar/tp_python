@@ -3,6 +3,11 @@ import csv
 import numpy as np
 from matplotlib import pyplot as plt
 from jinja2 import Environment, FileSystemLoader
+
+from openpyxl import Workbook
+from openpyxl.styles import Font
+from openpyxl.styles.borders import Border, Side
+
 import pdfkit
 
 currency_to_rub = {
@@ -43,7 +48,11 @@ def сsv_parser(file_name):
 
         return vacancies, vacancies_city
 
+isReport = input('Введите данные для печати:') == 'Статистика'
+
 filename, name = input("Введите название файла: "), input("Введите название профессии: ")
+
+
 
 if filename == "":
     filename = "vacancies_by_year.csv"
@@ -97,18 +106,87 @@ class Report:
         axes[1][1].pie(list([x[1] for x in (list(statics_by_cities.values()))[:10]]) + list([sum([x[1] for x in (list(statics_by_cities.values()))[10:]])]),
                        labels=(list(statics_by_cities.keys()))[:10] + ['Другие'], colors=colors)
 
-        plt.show()
         fig.savefig('graph.png')
         plt.close(fig)
 
+    def generate_excel(self, statics_by_years, statics_by_cities):
+        wb = Workbook()
+        wb.remove(wb['Sheet'])
+
+        statistics_by_year_sheet = wb.create_sheet("Статистика по годам")
+        statistics_by_year_sheet.append(["Год", "Средняя зарплата", f"Средняя зарплата - {name}", "Количество вакансий", f"Количество вакансий - {name}"])
+        for key in statics_by_years:
+            statistics_by_year_sheet.append([key] + statics_by_years[key])
+
+        cols_dict = {}
+        for row in statistics_by_year_sheet.rows:
+            for cell in row:
+                letter = cell.column_letter
+                cell.border = Border(left=Side(style='thin'),
+                                     right=Side(style='thin'),
+                                     top=Side(style='thin'),
+                                     bottom=Side(style='thin'))
+                if cell.value:
+                    cell.font = Font(name='Calibri', size=self.font_size)
+                    len_cell = len(str(cell.value))
+                    len_cell_dict = 0
+                    if letter in cols_dict:
+                        len_cell_dict = cols_dict[letter]
+
+                    if len_cell > len_cell_dict:
+                        cols_dict[letter] = len_cell
+                        ###!!! ПРОБЛЕМА АВТОМАТИЧЕСКОЙ ПОДГОНКИ !!!###
+                        ###!!! расчет новой ширины колонки (здесь надо подгонять) !!!###
+                        new_width_col = len_cell * self.font_size ** (self.font_size * 0.009)
+                        statistics_by_year_sheet.column_dimensions[cell.column_letter].width = new_width_col
+
+        for cell in statistics_by_year_sheet[1:1]:
+            cell.font = Font(name='Calibri', size=self.font_size, bold=True)
+
+
+        statistics_by_cities_sheet = wb.create_sheet("Статистика по городам")
+        statistics_by_cities_sheet.append(['Город', 'Уровень зарплат', ' ', 'Город', 'Доля вакансий'])
+        for key in statics_by_cities:
+            statistics_by_cities_sheet.append([key, statics_by_cities[key][0], ' ', key, statics_by_cities[key][1]])
+
+        cols_dict = {}
+        for row in statistics_by_cities_sheet.rows:
+            for cell in row:
+                letter = cell.column_letter
+                cell.border = Border(left=Side(style='thin'),
+                                     right=Side(style='thin'),
+                                     top=Side(style='thin'),
+                                     bottom=Side(style='thin'))
+                if cell.value:
+                    cell.font = Font(name='Calibri', size=self.font_size)
+                    len_cell = len(str(cell.value))
+                    len_cell_dict = 0
+                    if letter in cols_dict:
+                        len_cell_dict = cols_dict[letter]
+
+                    if len_cell > len_cell_dict:
+                        cols_dict[letter] = len_cell
+                        ###!!! ПРОБЛЕМА АВТОМАТИЧЕСКОЙ ПОДГОНКИ !!!###
+                        ###!!! расчет новой ширины колонки (здесь надо подгонять) !!!###
+                        new_width_col = len_cell * self.font_size ** (self.font_size * 0.009)
+                        statistics_by_cities_sheet.column_dimensions[cell.column_letter].width = new_width_col
+
+
+        for cell in statistics_by_cities_sheet['E']:
+            cell.number_format = '0.00%'
+        for cell in statistics_by_cities_sheet[1:1]:
+            cell.font = Font(name='Calibri', size=self.font_size, bold=True)
+        wb.save('report.xlsx')
+
     def generate_report(self, statics_by_years, statics_by_cities):
+        self.generate_png(statics_by_years, statics_by_cities)
         env = Environment(loader=FileSystemLoader('.'))
         template = env.get_template("pdf_template.html")
+        config = pdfkit.configuration(wkhtmltopdf=r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe")
 
         pdf_template = template.render({'items': statics_by_years, 'items2': statics_by_cities})
         options = {'enable-local-file-access': None}
-        pdfkit.from_string(pdf_template, 'out.pdf', options=options)
-
+        pdfkit.from_string(pdf_template, 'out.pdf', options=options, configuration=config)
 
 
 
@@ -158,7 +236,11 @@ for key in vacancies_city.keys():
     vacancies_proportion_by_city.update({key: float(len(vacancies_city[key])/vacancies_count)})
     statistics_by_cities.update({key: [vacancies_salary_by_city[key], round(vacancies_proportion_by_city[key] * 100, 2)]})
 
-Report().generate_report(statistics_by_years, statistics_by_cities)
+
+if isReport:
+    Report().generate_report(statistics_by_years, statistics_by_cities)
+else:
+    Report.generate_excel(statistics_by_years, statistics_by_cities)
 
 temp = '\''
 print(f"Динамика уровня зарплат по годам: {str(vacancies_salary_by_years).replace(temp, '')}")
