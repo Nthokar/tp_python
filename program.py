@@ -68,7 +68,11 @@ class Vacancy:
         self.published_at = published_at
 
 class Report:
-    font_size = 13
+
+  
+
+    font_size = 12
+
 
     def generate_png(self, statics_by_years, statics_by_cities):
         fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(18, 12))
