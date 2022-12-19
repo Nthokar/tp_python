@@ -11,6 +11,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 from openpyxl.styles.borders import Border, Side
 
+from unittest import TestCase
+
 import pdfkit
 
 currency_to_rub = {
@@ -35,6 +37,8 @@ def сsv_parser(file_name):
 
     :param file_name: Имя csv файла с данными
     :return:
+    />>> csv_parser('vacancies_by_year.csv')[0]['2007'][0].salary_currency
+    'RUR'
     """
 
     with open(file_name, encoding='utf_8_sig') as r_file:
@@ -66,6 +70,30 @@ def сsv_parser(file_name):
         return vacancies, vacancies_city
 
 
+class VacancyTests(TestCase):
+    """Этот класс тестирует коректность инициализации класса Vacancy
+
+    """
+    def test_vacancy_type(self):
+        self.assertEqual(type(Vacancy('Программист', 10, 20, 'USD', 'Moscow', '2007-12-03T17:34:36+0300')).__name__,
+                         'Vacancy')
+
+    def test_salary_average(self):
+        self.assertEqual(Vacancy('Программист', 10, 20, 'USD', 'Moscow', '2007-12-03T17:34:36+0300').salary_average,
+                         15.0)
+
+    def test_salary_currency(self):
+        self.assertEqual(Vacancy('Программист', 10, 20, 'USD', 'Moscow', '2007-12-03T17:34:36+0300').salary_currency,
+                         'USD')
+
+class CsvParserTests(TestCase):
+    """Этот класс тестирует работу метода csv_parser на заранее определенно верных примерах
+    """
+    def test_salary_currency(self):
+        self.assertEqual(сsv_parser('vacancies_by_year.csv')[0]['2007'][0].salary_currency, 'RUR')
+
+    def test_salary_average(self):
+        self.assertEqual(сsv_parser('vacancies_by_year.csv')[0]['2007'][0].salary_average, 40000.0)
 class Vacancy:
     """Класс для представления вакансии.
     Attributes:
