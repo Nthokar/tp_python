@@ -11,6 +11,10 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 from openpyxl.styles.borders import Border, Side
 
+from os import listdir
+from os.path import isfile, join
+from multiprocessing import Process, Queue, Manager
+
 from unittest import TestCase
 
 import pdfkit
@@ -28,8 +32,7 @@ currency_to_rub = {
     "UZS": 0.0055,
 }
 
-
-def сsv_parser(file_name):
+def csv_parser(file_name):
     """Функция читает информацию из файла и создает объекты vacancy,
         которые складывает в два словаря:
             по годам,
@@ -90,10 +93,10 @@ class CsvParserTests(TestCase):
     """Этот класс тестирует работу метода csv_parser на заранее определенно верных примерах
     """
     def test_salary_currency(self):
-        self.assertEqual(сsv_parser('vacancies_by_year.csv')[0]['2007'][0].salary_currency, 'RUR')
+        self.assertEqual(csv_parser('vacancies_by_year.csv')[0]['2007'][0].salary_currency, 'RUR')
 
     def test_salary_average(self):
-        self.assertEqual(сsv_parser('vacancies_by_year.csv')[0]['2007'][0].salary_average, 40000.0)
+        self.assertEqual(csv_parser('vacancies_by_year.csv')[0]['2007'][0].salary_average, 40000.0)
 class Vacancy:
     """Класс для представления вакансии.
     Attributes:
@@ -296,85 +299,120 @@ class Report:
         options = {'enable-local-file-access': None}
         pdfkit.from_string(pdf_template, 'out.pdf', options=options, configuration=config)
 
-isReport = input('Введите данные для печати:') == 'Статистика'
+def union_dict(dict1, dict2):
+    for key2 in dict2:
+        if dict1.keys().__contains__(key2):
+            dict1[key2] += dict2[key2]
+        else:
+            dict1.update({key2: dict2[key2]})
+    return dict1
+def get_statistic_by_years(vacancies, name):
+    statistics_by_years = {}
+    vacancies_count_by_years, vacancies_salary_by_years, \
+    vacancies_count_by_years_for_name, vacancies_salary_by_years_for_name = {}, {}, {}, {}
+    for key in vacancies.keys():
+        vacancies_count_by_years.update({key: len(vacancies[key])})
+        vacancies_salary_by_years.update({key: int(
+            sum(x.salary_average * currency_to_rub[x.salary_currency] for x in vacancies[key]) / vacancies_count_by_years[
+                key])})
+        vacancies_count_by_years_for_name.update({key: len(list(filter(lambda x: (name in x.name), vacancies[key])))})
+        if vacancies_count_by_years_for_name[key] == 0:
+            vacancies_salary_by_years_for_name.update({key: 0})
+        else:
+            vacancies_salary_by_years_for_name.update({key: int(sum(
+                x.salary_average * currency_to_rub[x.salary_currency] for x in
+                list(filter(lambda x: (name in x.name), vacancies[key]))) / vacancies_count_by_years_for_name[key])})
+        statistics_by_years.update({key: [vacancies_salary_by_years[key], vacancies_salary_by_years_for_name[key],
+                                          vacancies_count_by_years[key], vacancies_count_by_years_for_name[key]]})
+    return statistics_by_years
 
-filename, name = input("Введите название файла: "), input("Введите название профессии: ")
+def get_statistic_by_cities(vacancies_city):
+    vacancies_count = sum(len(vacancies_city[i]) for i in vacancies_city)
+    city_to_pop = []
+    for city in vacancies_city:
+        if (len(vacancies_city[city]) < int(vacancies_count / 100)):
+            city_to_pop.append(city)
 
-"""
-при пустом вводе имени файла подставляет стандартное имя файла
-"""
-if filename == "":
-    filename = "vacancies_by_year.csv"
+    for city in city_to_pop:
+        vacancies_city.pop(city)
 
-vacancies, vacancies_city = сsv_parser(filename)
-vacancies_count = sum(len(vacancies_city[i]) for i in vacancies_city)
-city_to_pop = []
-for city in vacancies_city:
-    if (len(vacancies_city[city]) < int(vacancies_count / 100)):
-        city_to_pop.append(city)
+    map(lambda k, v: (k, v) if len(vacancies_city[k]) > vacancies_count / 100 else None, vacancies_city)
 
-for city in city_to_pop:
-    vacancies_city.pop(city)
+    statistics_by_cities = {}
+    vacancies_salary_by_city, vacancies_proportion_by_city = {}, {}
+    for key in vacancies_city.keys():
+        vacancies_salary_by_city.update(
+            {key: int(
+                sum(map(lambda x: x.salary_average * currency_to_rub[x.salary_currency], vacancies_city[key])) / len(
+                    vacancies_city[key]))})
+        vacancies_proportion_by_city.update({key: float(len(vacancies_city[key]) / vacancies_count)})
+        statistics_by_cities.update(
+            {key: [vacancies_salary_by_city[key], round(vacancies_proportion_by_city[key] * 100, 2)]})
 
-map(lambda k, v: (k, v) if len(vacancies_city[k]) > vacancies_count / 100 else None, vacancies_city)
+    return statistics_by_cities
+def generate_statistic_by_years(filename, name, q):
+    parsed = csv_parser(filename)
+    q.put(get_statistic_by_years(parsed[0], name))
+    q.put(parsed[1], block=True)
+
+if __name__ == '__main__':
+    statistics_by_years = {}
+
+    filename, name = input("Введите название файла: "), input("Введите название профессии: ")
+
+    """
+    при пустом вводе имени файла подставляет стандартное имя файла
+    """
+    if filename == "":
+        filename = "vacancies"
+
+
 
 # region
-"""Блок обработки данных, для каждого года находится средний оклад по всем професси и указанной, а также подсчитывается
-количество вакансий по всем профессиям и указанной. Для каждого года подсчитывается средняя зп, а также доля вакансий
-"""
+    """Блок обработки данных, для каждого года находится средний оклад по всем професси и указанной, а также подсчитывается
+    количество вакансий по всем профессиям и указанной. Для каждого года подсчитывается средняя зп, а также доля вакансий
+    """
 
-statistics_by_years = {}
-vacancies_count_by_years, vacancies_salary_by_years, \
-vacancies_count_by_years_for_name, vacancies_salary_by_years_for_name = {}, {}, {}, {}
-for key in vacancies.keys():
-    vacancies_count_by_years.update({key: len(vacancies[key])})
-    vacancies_salary_by_years.update({key: int(
-        sum(x.salary_average * currency_to_rub[x.salary_currency] for x in vacancies[key]) / vacancies_count_by_years[
-            key])})
-    vacancies_count_by_years_for_name.update({key: len(list(filter(lambda x: (name in x.name), vacancies[key])))})
-    if vacancies_count_by_years_for_name[key] == 0:
-        vacancies_salary_by_years_for_name.update({key: 0})
-    else:
-        vacancies_salary_by_years_for_name.update({key: int(sum(
-            x.salary_average * currency_to_rub[x.salary_currency] for x in
-            list(filter(lambda x: (name in x.name), vacancies[key]))) / vacancies_count_by_years_for_name[key])})
-    statistics_by_years.update({key: [vacancies_salary_by_years[key], vacancies_salary_by_years_for_name[key],
-                                      vacancies_count_by_years[key], vacancies_count_by_years_for_name[key]]})
 
-statistics_by_cities = {}
-vacancies_salary_by_city, vacancies_proportion_by_city = {}, {}
-for key in vacancies_city.keys():
-    vacancies_salary_by_city.update(
-        {key: int(sum(map(lambda x: x.salary_average * currency_to_rub[x.salary_currency], vacancies_city[key])) / len(
-            vacancies_city[key]))})
-    vacancies_proportion_by_city.update({key: float(len(vacancies_city[key]) / vacancies_count)})
-    statistics_by_cities.update(
-        {key: [vacancies_salary_by_city[key], round(vacancies_proportion_by_city[key] * 100, 2)]})
-# endregion
+    """Блок вывода промежуточных данных в консоль
+    """
 
-if isReport:
-    Report().generate_report(statistics_by_years, statistics_by_cities)
-else:
-    Report().generate_excel(statistics_by_years, statistics_by_cities)
+    files = [f for f in listdir(filename) if isfile(join(filename, f))]
+    processes = []
+    vacancies_city = {}
+    for file in files:
+        manager = Manager()
+        q = manager.Queue()
+        p = Process(target=generate_statistic_by_years, args=(filename+'\\'+file, name,q))
+        processes.append((p, q))
+        p.start()
 
-# region
-"""Блок вывода промежуточных данных в консоль
-"""
-temp = '\''
-print(f"Динамика уровня зарплат по годам: {str(vacancies_salary_by_years).replace(temp, '')}")
-print("Динамика количества вакансий по годам: " + str(vacancies_count_by_years).replace(temp, ''))
-print(
-    "Динамика уровня зарплат по годам для выбранной профессии: " + str(vacancies_salary_by_years_for_name).replace(temp,
-                                                                                                                   ''))
-print(
-    "Динамика количества вакансий по годам для выбранной профессии: " + str(vacancies_count_by_years_for_name).replace(
-        temp, ''))
-vacancies_salary_by_city = {k: v for k, v in
-                            sorted(vacancies_salary_by_city.items(), key=lambda item: item[1], reverse=True)[0:10]}
-vacancies_proportion_by_city = {k: round(v, 4) for k, v in
-                                sorted(vacancies_proportion_by_city.items(), key=lambda item: item[1], reverse=True)[
-                                0:10]}
+    for i in range(len(processes)):
+        processes[i][0].join()
+        data_for_year = processes[i][1].get()
+        data_for_cities = processes[i][1].get()
 
-print("Уровень зарплат по городам (в порядке убывания): " + str(vacancies_salary_by_city))
-print(f"Доля вакансий по городам (в порядке убывания): {str(vacancies_proportion_by_city)}")
+        vacancies_city = union_dict(vacancies_city, data_for_cities)
+        statistics_by_years.update(data_for_year)
+
+    statistics_by_cities = get_statistic_by_cities(vacancies_city)
+    vacancies_salary_by_city = dict(map(lambda x: (x, statistics_by_cities[x][0]), statistics_by_cities))
+    vacancies_proportion_by_city = dict(map(lambda x: (x, statistics_by_cities[x][1]), statistics_by_cities))
+    temp = '\''
+    print(f"Динамика уровня зарплат по годам: {str(dict(map(lambda x: (x, statistics_by_years[x][0]), statistics_by_years))).replace(temp, '')}")
+    print("Динамика количества вакансий по годам: " + str(dict(map(lambda x: (x, statistics_by_years[x][2]), statistics_by_years))).replace(temp, ''))
+    print(
+        "Динамика уровня зарплат по годам для выбранной профессии: " + str(dict(map(lambda x: (x, statistics_by_years[x][1]), statistics_by_years))).replace(temp,
+                                                                                                                       ''))
+    print(
+        "Динамика количества вакансий по годам для выбранной профессии: " + str(dict(map(lambda x: (x, statistics_by_years[x][3]), statistics_by_years))).replace(
+            temp, ''))
+    vacancies_salary_by_city = {k: v for k, v in
+                                sorted(vacancies_salary_by_city.items(), key=lambda item: item[1], reverse=True)[0:10]}
+    vacancies_proportion_by_city = {k: round(v, 4) for k, v in
+                                    sorted(vacancies_proportion_by_city.items(), key=lambda item: item[1], reverse=True)[
+                                    0:10]}
+
+    print("Уровень зарплат по городам (в порядке убывания): " + str(vacancies_salary_by_city))
+    print(f"Доля вакансий по городам (в порядке убывания): {str(vacancies_proportion_by_city)}")
 # endregion
