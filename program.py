@@ -88,7 +88,6 @@ class VacancyTests(TestCase):
     def test_salary_currency(self):
         self.assertEqual(Vacancy('Программист', 10, 20, 'USD', 'Moscow', '2007-12-03T17:34:36+0300').salary_currency,
                          'USD')
-
 class CsvParserTests(TestCase):
     """Этот класс тестирует работу метода csv_parser на заранее определенно верных примерах
     """
@@ -97,6 +96,8 @@ class CsvParserTests(TestCase):
 
     def test_salary_average(self):
         self.assertEqual(csv_parser('vacancies_by_year.csv')[0]['2007'][0].salary_average, 40000.0)
+
+
 class Vacancy:
     """Класс для представления вакансии.
     Attributes:
@@ -299,14 +300,28 @@ class Report:
         options = {'enable-local-file-access': None}
         pdfkit.from_string(pdf_template, 'out.pdf', options=options, configuration=config)
 
+
 def union_dict(dict1, dict2):
+    """Метод дополняет пары ключ-значение второго словаря в первый
+
+    :param dict1: Словарь, который будем дополнять
+    :param dict2: Добавочный словарь
+    :return: dict1 + dict2
+    """
     for key2 in dict2:
         if dict1.keys().__contains__(key2):
             dict1[key2] += dict2[key2]
         else:
             dict1.update({key2: dict2[key2]})
     return dict1
+
 def get_statistic_by_years(vacancies, name):
+    """Этот метод подсчитывает среднюю зарплату для всех вакансий и указанных, а так же их количество
+
+    :param vacancies: список вакансий
+    :param name: имя вакансии
+    :return:
+    """
     statistics_by_years = {}
     vacancies_count_by_years, vacancies_salary_by_years, \
     vacancies_count_by_years_for_name, vacancies_salary_by_years_for_name = {}, {}, {}, {}
@@ -327,6 +342,12 @@ def get_statistic_by_years(vacancies, name):
     return statistics_by_years
 
 def get_statistic_by_cities(vacancies_city):
+    """Этот метод отбрасывает данные о городах, вакансии которых занимают меньше одного процента от рынка,
+    а так же вычисляет средние зарплаты и процент на рынке для остальных городов.
+
+    :param vacancies_city: словарь типа {city: [vacancy1, vacancy2, ...]}
+    :return: статистика по городам
+    """
     vacancies_count = sum(len(vacancies_city[i]) for i in vacancies_city)
     city_to_pop = []
     for city in vacancies_city:
@@ -350,33 +371,31 @@ def get_statistic_by_cities(vacancies_city):
             {key: [vacancies_salary_by_city[key], round(vacancies_proportion_by_city[key] * 100, 2)]})
 
     return statistics_by_cities
+
 def generate_statistic_by_years(filename, name, q):
+    """Метод который обрабатывается отдельным процессом для каждого файла,
+    вычисляет статистику по годам, и сохраняет данные по городам.
+
+    :param filename:
+    :param name:
+    :param q:
+    :return:
+    """
     parsed = csv_parser(filename)
     q.put(get_statistic_by_years(parsed[0], name))
     q.put(parsed[1], block=True)
 
-if __name__ == '__main__':
-    statistics_by_years = {}
 
+if __name__ == '__main__':
     filename, name = input("Введите название файла: "), input("Введите название профессии: ")
 
-    """
-    при пустом вводе имени файла подставляет стандартное имя файла
+    """При пустом вводе имени файла подставляет стандартное имя файла
     """
     if filename == "":
         filename = "vacancies"
 
-
-
-# region
-    """Блок обработки данных, для каждого года находится средний оклад по всем професси и указанной, а также подсчитывается
-    количество вакансий по всем профессиям и указанной. Для каждого года подсчитывается средняя зп, а также доля вакансий
+    """Запускает новый поток для обработки каждого файла в папке
     """
-
-
-    """Блок вывода промежуточных данных в консоль
-    """
-
     files = [f for f in listdir(filename) if isfile(join(filename, f))]
     processes = []
     vacancies_city = {}
@@ -387,6 +406,10 @@ if __name__ == '__main__':
         processes.append((p, q))
         p.start()
 
+    # region
+    """Обработка данных по городам и формирование статистики по ним
+    """
+    statistics_by_years = {}
     for i in range(len(processes)):
         processes[i][0].join()
         data_for_year = processes[i][1].get()
@@ -398,21 +421,35 @@ if __name__ == '__main__':
     statistics_by_cities = get_statistic_by_cities(vacancies_city)
     vacancies_salary_by_city = dict(map(lambda x: (x, statistics_by_cities[x][0]), statistics_by_cities))
     vacancies_proportion_by_city = dict(map(lambda x: (x, statistics_by_cities[x][1]), statistics_by_cities))
+    # endregion
+    # region
+    """Блок кода для вывода данных в консоль
+    """
     temp = '\''
-    print(f"Динамика уровня зарплат по годам: {str(dict(map(lambda x: (x, statistics_by_years[x][0]), statistics_by_years))).replace(temp, '')}")
-    print("Динамика количества вакансий по годам: " + str(dict(map(lambda x: (x, statistics_by_years[x][2]), statistics_by_years))).replace(temp, ''))
-    print(
-        "Динамика уровня зарплат по годам для выбранной профессии: " + str(dict(map(lambda x: (x, statistics_by_years[x][1]), statistics_by_years))).replace(temp,
-                                                                                                                       ''))
-    print(
-        "Динамика количества вакансий по годам для выбранной профессии: " + str(dict(map(lambda x: (x, statistics_by_years[x][3]), statistics_by_years))).replace(
-            temp, ''))
+    print(f"Динамика уровня зарплат по годам: "
+          + str(dict(map(lambda x: (x, statistics_by_years[x][0]),
+                         statistics_by_years))).replace(temp, ''))
+    print("Динамика количества вакансий по годам: "
+          + str(dict(map(lambda x: (x, statistics_by_years[x][2]),
+                         statistics_by_years))).replace(temp, ''))
+    print("Динамика уровня зарплат по годам для выбранной профессии: "
+          + str(dict(map(lambda x: (x, statistics_by_years[x][1]),
+                         statistics_by_years))).replace(temp, ''))
+    print("Динамика количества вакансий по годам для выбранной профессии: "
+          + str(dict(map(lambda x: (x, statistics_by_years[x][3]),
+                         statistics_by_years))).replace(temp, ''))
+
     vacancies_salary_by_city = {k: v for k, v in
-                                sorted(vacancies_salary_by_city.items(), key=lambda item: item[1], reverse=True)[0:10]}
+                                sorted(vacancies_salary_by_city.items(),
+                                       key=lambda item: item[1],
+                                       reverse=True)
+                                [0:10]}
     vacancies_proportion_by_city = {k: round(v, 4) for k, v in
-                                    sorted(vacancies_proportion_by_city.items(), key=lambda item: item[1], reverse=True)[
+                                    sorted(vacancies_proportion_by_city.items(),
+                                           key=lambda item: item[1],
+                                           reverse=True)[
                                     0:10]}
 
     print("Уровень зарплат по городам (в порядке убывания): " + str(vacancies_salary_by_city))
     print(f"Доля вакансий по городам (в порядке убывания): {str(vacancies_proportion_by_city)}")
-# endregion
+    # endregion
