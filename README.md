@@ -13,3 +13,7 @@
   - Multiprocessing
   
   ![image]( https://github.com/Nthokar/tp_python/blob/master/screenshots/multiProcessing.jpg)
+  - concurrent.futures
+  
+  ![image]( https://github.com/Nthokar/tp_python/blob/master/screenshots/concurrent.futures.jpg)
+  
