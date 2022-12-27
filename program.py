@@ -1,4 +1,5 @@
 import csv
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -14,6 +15,7 @@ from openpyxl.styles.borders import Border, Side
 from os import listdir
 from os.path import isfile, join
 from multiprocessing import Process, Queue, Manager
+import concurrent.futures
 
 from unittest import TestCase
 
@@ -31,6 +33,7 @@ currency_to_rub = {
     "USD": 60.66,
     "UZS": 0.0055,
 }
+
 
 def csv_parser(file_name):
     """Функция читает информацию из файла и создает объекты vacancy,
@@ -75,8 +78,8 @@ def csv_parser(file_name):
 
 class VacancyTests(TestCase):
     """Этот класс тестирует коректность инициализации класса Vacancy
-
     """
+
     def test_vacancy_type(self):
         self.assertEqual(type(Vacancy('Программист', 10, 20, 'USD', 'Moscow', '2007-12-03T17:34:36+0300')).__name__,
                          'Vacancy')
@@ -88,9 +91,12 @@ class VacancyTests(TestCase):
     def test_salary_currency(self):
         self.assertEqual(Vacancy('Программист', 10, 20, 'USD', 'Moscow', '2007-12-03T17:34:36+0300').salary_currency,
                          'USD')
+
+
 class CsvParserTests(TestCase):
     """Этот класс тестирует работу метода csv_parser на заранее определенно верных примерах
     """
+
     def test_salary_currency(self):
         self.assertEqual(csv_parser('vacancies_by_year.csv')[0]['2007'][0].salary_currency, 'RUR')
 
@@ -209,7 +215,6 @@ class Report:
 
             :param statics_by_cities: словарь, содержащий значения типа:
                 {город: [средняя зарплата по городу, процент вакансий в городе]}
-
         """
 
         wb = Workbook()
@@ -289,7 +294,6 @@ class Report:
 
             :param statics_by_cities: словарь, содержащий значения типа:
                 {город: [средняя зарплата по городу, процент вакансий в городе]}
-
         """
         self.generate_png(statics_by_years, statics_by_cities)
         env = Environment(loader=FileSystemLoader('.'))
@@ -315,6 +319,7 @@ def union_dict(dict1, dict2):
             dict1.update({key2: dict2[key2]})
     return dict1
 
+
 def get_statistic_by_years(vacancies, name):
     """Этот метод подсчитывает среднюю зарплату для всех вакансий и указанных, а так же их количество
 
@@ -328,7 +333,8 @@ def get_statistic_by_years(vacancies, name):
     for key in vacancies.keys():
         vacancies_count_by_years.update({key: len(vacancies[key])})
         vacancies_salary_by_years.update({key: int(
-            sum(x.salary_average * currency_to_rub[x.salary_currency] for x in vacancies[key]) / vacancies_count_by_years[
+            sum(x.salary_average * currency_to_rub[x.salary_currency] for x in vacancies[key]) /
+            vacancies_count_by_years[
                 key])})
         vacancies_count_by_years_for_name.update({key: len(list(filter(lambda x: (name in x.name), vacancies[key])))})
         if vacancies_count_by_years_for_name[key] == 0:
@@ -340,6 +346,7 @@ def get_statistic_by_years(vacancies, name):
         statistics_by_years.update({key: [vacancies_salary_by_years[key], vacancies_salary_by_years_for_name[key],
                                           vacancies_count_by_years[key], vacancies_count_by_years_for_name[key]]})
     return statistics_by_years
+
 
 def get_statistic_by_cities(vacancies_city):
     """Этот метод отбрасывает данные о городах, вакансии которых занимают меньше одного процента от рынка,
@@ -372,7 +379,8 @@ def get_statistic_by_cities(vacancies_city):
 
     return statistics_by_cities
 
-def generate_statistic_by_years(filename, name, q):
+
+def generate_statistic_by_years(filename, name):
     """Метод который обрабатывается отдельным процессом для каждого файла,
     вычисляет статистику по годам, и сохраняет данные по городам.
 
@@ -382,8 +390,7 @@ def generate_statistic_by_years(filename, name, q):
     :return:
     """
     parsed = csv_parser(filename)
-    q.put(get_statistic_by_years(parsed[0], name))
-    q.put(parsed[1], block=True)
+    return get_statistic_by_years(parsed[0], name), parsed[1]
 
 
 if __name__ == '__main__':
@@ -396,24 +403,20 @@ if __name__ == '__main__':
 
     """Запускает новый поток для обработки каждого файла в папке
     """
+
     files = [f for f in listdir(filename) if isfile(join(filename, f))]
     processes = []
     vacancies_city = {}
-    for file in files:
-        manager = Manager()
-        q = manager.Queue()
-        p = Process(target=generate_statistic_by_years, args=(filename+'\\'+file, name,q))
-        processes.append((p, q))
-        p.start()
+    with ProcessPoolExecutor(max_workers=10) as executor:
+        for file in files:
+            processes.append(executor.submit(generate_statistic_by_years, filename + '\\' + file, name))
 
     # region
     """Обработка данных по городам и формирование статистики по ним
     """
     statistics_by_years = {}
     for i in range(len(processes)):
-        processes[i][0].join()
-        data_for_year = processes[i][1].get()
-        data_for_cities = processes[i][1].get()
+        data_for_year, data_for_cities = processes[i].result()
 
         vacancies_city = union_dict(vacancies_city, data_for_cities)
         statistics_by_years.update(data_for_year)
