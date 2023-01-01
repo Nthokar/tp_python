@@ -1,4 +1,6 @@
 import csv
+import requests
+
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -31,6 +33,8 @@ currency_to_rub = {
     "USD": 60.66,
     "UZS": 0.0055,
 }
+
+URl = 'https://www.cbr.ru/scripts/XML_valFull.asp?d=0&date_req='
 
 def csv_parser(file_name):
     """Функция читает информацию из файла и создает объекты vacancy,
@@ -72,6 +76,10 @@ def csv_parser(file_name):
 
         return vacancies, vacancies_city
 
+"""
+TODO : написать функцию котторая будет считать количестов вакансий для существующих валют
+написать функцию которая бы запрашивала курс для указанной валюты в указанную дату
+написать функцию которая переводит зарплату из собственной валюты в рубли"""
 
 class VacancyTests(TestCase):
     """Этот класс тестирует коректность инициализации класса Vacancy
@@ -135,6 +143,15 @@ class Vacancy:
         self.salary_currency = salary_currency
         self.area_name = area_name
         self.published_at = published_at
+
+    def get_date_for_request(self):
+        """функия которая возвращают дату публикации вакансии для url запроса
+        >>> Vacancy('Программист', 10, 20, 'USD', 'Moscow', '2007-12-03T17:34:36+0300').get_date_for_request()
+        '03/12/2007'
+        """
+
+        date = self.published_at[:10].split('-')
+        return '/'.join(date[::-1])
 
 
 class Report:
@@ -385,14 +402,13 @@ def generate_statistic_by_years(filename, name, q):
     q.put(get_statistic_by_years(parsed[0], name))
     q.put(parsed[1], block=True)
 
-
 if __name__ == '__main__':
     filename, name = input("Введите название файла: "), input("Введите название профессии: ")
 
     """При пустом вводе имени файла подставляет стандартное имя файла
     """
     if filename == "":
-        filename = "vacancies"
+        filename = "data/vacancies"
 
     """Запускает новый поток для обработки каждого файла в папке
     """
@@ -402,7 +418,8 @@ if __name__ == '__main__':
     for file in files:
         manager = Manager()
         q = manager.Queue()
-        p = Process(target=generate_statistic_by_years, args=(filename+'\\'+file, name,q))
+        # if os is win then change / to \\
+        p = Process(target=generate_statistic_by_years, args=(filename+'/'+file, name,q))
         processes.append((p, q))
         p.start()
 
