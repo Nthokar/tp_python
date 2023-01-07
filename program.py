@@ -83,12 +83,16 @@ def throw_low_quantity_currencies(vacancies):
                 currencies_rate[vacancies_salary_by_city] += 1
             else:
                 currencies_rate.update({vacancy.salary_currency: 1})
+    """сохраняем валюты кооторые встречаются более 5000 раз"""
     for currency in currencies_rate:
         if currencies_rate[currency] <= 5000:
             currencies_rate.pop(currency)
+
+    """Убираем вакансии валюты которых встречались реже тербуемого """
     for key in vacancies.keys():
         for vacancy in vacancies[key]:
             if vacancy.salary_currency not in currencies_rate.keys():
+                vacancies[key].pop(vacancy)
 
 
 """
