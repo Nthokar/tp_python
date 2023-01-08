@@ -88,12 +88,28 @@ def throw_low_quantity_currencies(vacancies):
         if currencies_rate[currency] <= 5000:
             currencies_rate.pop(currency)
 
-    """Убираем вакансии валюты которых встречались реже тербуемого """
+
+    """Убираем вакансии валюты которых встречались реже тербуемого"""
+    min_date, max_date = '0001-01-01', '2100-12-30'
     for key in vacancies.keys():
         for vacancy in vacancies[key]:
             if vacancy.salary_currency not in currencies_rate.keys():
                 vacancies[key].pop(vacancy)
+            else:
+                min_date= min(min_date, vacancy.published_at)
+                max_date= max(max_date, vacancy.published_at)
 
+    from test import generate_currencies_dataframe
+
+    date = min_date.split('-')
+    min_date = '/'.join(date[::-1])
+    date = max_date.split('-')
+    max_date= '/'.join(date[::-1])
+    dataframe = generate_currencies_dataframe(currencies_rate, min_date, max_date)
+
+    for key in vacancies.keys():
+        for vacancy in vacancies[key]:
+            vacancy.transfer_currency(dataframe)
 
 """
 TODO : написать функцию котторая будет считать количестов вакансий для существующих валют
@@ -171,6 +187,12 @@ class Vacancy:
 
         date = self.published_at[:10].split('-')
         return '/'.join(date[::-1])
+
+    def transfer_currency(self, data_frame):
+        k = data_frame[self.get_date_for_request()][self.salary_currency]
+        self.salary_from = self.salary_from * k
+        self.salary_to = self.salary_to * k
+        self.salary_average = self.salary_average * k
 
 
 class Report:

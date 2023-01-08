@@ -44,7 +44,9 @@ def generate_currencies_dataframe(tracking_currencies, left_date, right_date):
             for currency in tracking_currencies:
                 row.append(currencies_by_dates[date][currency]) if currency in currencies_by_dates[date] else ' '
             writer.writerow([date] + row)
-
+        return currencies_by_dates
+def get_currencies():
+    with open('currencies_dataframe', 'r', encoding='utf_8_sig') as r_file:
 
 
 print(date_iter_by_month('01/10/2016', '01/12/2020'))
