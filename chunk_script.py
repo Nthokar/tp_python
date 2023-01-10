@@ -27,4 +27,4 @@ def generate_chunks(file_name):
                     writer.writerow(row)
 
 
-generate_chunks('data/vacancies_dif_currencies.csv')
+generate_chunks('data\\vacancies_dif_currencies.csv')

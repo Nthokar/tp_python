@@ -53,18 +53,23 @@ def csv_parser(file_name):
         list_naming = file_reader.__next__()
         vacancies, vacancies_city = {}, {}
         for row in file_reader:
-            if len(row) != len(list_naming) or row.__contains__(""):
+            # if len(row) != len(list_naming) or row.__contains__(""):
+            #     continue
+
+            if len(row) == 0:
                 continue
-            fieds = {}
+            fields = {}
             for field_index in range(len(row)):
-                fieds.update({list_naming[field_index]: row[field_index]})
-            year = fieds["published_at"][:4]
-            vacancy = Vacancy(name=fieds["name"],
-                              salary_from=fieds["salary_from"],
-                              salary_to=fieds["salary_to"],
-                              salary_currency=fieds["salary_currency"],
-                              area_name=fieds["area_name"],
-                              published_at=fieds["published_at"])
+                fields.update({list_naming[field_index]: row[field_index]})
+            year = fields["published_at"][:4]
+            vacancy = Vacancy(name=fields["name"],
+                              salary_from=fields["salary_from"],
+                              salary_to=fields["salary_to"],
+                              salary_currency=fields["salary_currency"],
+                              area_name=fields["area_name"],
+                              published_at=fields["published_at"])
+            if vacancy.salary_from == 0 and vacancy.salary_to == 0:
+                continue
             if vacancies_city.keys().__contains__(vacancy.area_name):
                 vacancies_city[vacancy.area_name].append(vacancy)
             else:
@@ -76,40 +81,53 @@ def csv_parser(file_name):
 
         return vacancies, vacancies_city
 def throw_low_quantity_currencies(vacancies):
+    if vacancies is None or len(vacancies) == 0:
+        return
     currencies_rate = {}
     for key in vacancies.keys():
         for vacancy in vacancies[key]:
             if vacancy.salary_currency in currencies_rate:
-                currencies_rate[vacancies_salary_by_city] += 1
+                currencies_rate[vacancy.salary_currency] += 1
             else:
                 currencies_rate.update({vacancy.salary_currency: 1})
     """сохраняем валюты кооторые встречаются более 5000 раз"""
+    currencies_to_pop = []
     for currency in currencies_rate:
         if currencies_rate[currency] <= 5000:
-            currencies_rate.pop(currency)
+            currencies_to_pop.append(currency)
+    for currency in currencies_to_pop:
+        currencies_rate.pop(currency)
 
 
     """Убираем вакансии валюты которых встречались реже тербуемого"""
-    min_date, max_date = '0001-01-01', '2100-12-30'
+    min_date, max_date = '2100-12-30', '0001-01-01'
     for key in vacancies.keys():
+        vacancies_to_pop = []
         for vacancy in vacancies[key]:
             if vacancy.salary_currency not in currencies_rate.keys():
-                vacancies[key].pop(vacancy)
+                vacancies_to_pop.append(vacancy)
             else:
-                min_date= min(min_date, vacancy.published_at)
-                max_date= max(max_date, vacancy.published_at)
+                min_date = min(min_date, vacancy.published_at)
+                max_date = max(max_date, vacancy.published_at)
+        for vacancy in vacancies_to_pop:
+            vacancies[key].remove(vacancy)
+
 
     from test import generate_currencies_dataframe
 
     date = min_date.split('-')
     min_date = '/'.join(date[::-1])
     date = max_date.split('-')
-    max_date= '/'.join(date[::-1])
-    dataframe = generate_currencies_dataframe(currencies_rate, min_date, max_date)
+    max_date = '/'.join(date[::-1])
+    if min_date == '2100-12-30' and max_date == '0001-01-01':
+        return
+    dataframe = generate_currencies_dataframe(list(currencies_rate.keys()), min_date, max_date)
 
     for key in vacancies.keys():
         for vacancy in vacancies[key]:
             vacancy.transfer_currency(dataframe)
+
+    return vacancies
 
 """
 TODO : написать функцию котторая будет считать количестов вакансий для существующих валют
@@ -172,8 +190,8 @@ class Vacancy:
         """
 
         self.name = name
-        self.salary_from = float(salary_from)
-        self.salary_to = float(salary_to)
+        self.salary_from = float(salary_from) if salary_from != '' else 0
+        self.salary_to = float(salary_to) if salary_to != '' else 0
         self.salary_average = (self.salary_from + self.salary_to) / 2
         self.salary_currency = salary_currency
         self.area_name = area_name
@@ -186,10 +204,13 @@ class Vacancy:
         """
 
         date = self.published_at[:10].split('-')
-        return '/'.join(date[::-1])
+        return '01' + ('/'.join(date[::-1]))[2:]
 
     def transfer_currency(self, data_frame):
-        k = data_frame[self.get_date_for_request()][self.salary_currency]
+        if data_frame[self.get_date_for_request()].__contains__(self.salary_currency):
+            k = data_frame[self.get_date_for_request()][self.salary_currency]
+        else:
+            k = 0
         self.salary_from = self.salary_from * k
         self.salary_to = self.salary_to * k
         self.salary_average = self.salary_average * k
@@ -366,6 +387,8 @@ def union_dict(dict1, dict2):
     :param dict2: Добавочный словарь
     :return: dict1 + dict2
     """
+    if dict2 is None or dict1 is None:
+        return
     for key2 in dict2:
         if dict1.keys().__contains__(key2):
             dict1[key2] += dict2[key2]
@@ -373,28 +396,28 @@ def union_dict(dict1, dict2):
             dict1.update({key2: dict2[key2]})
     return dict1
 
-def get_statistic_by_years(vacancies, name):
+def get_statistic_by_years(vacancies_by_years, name):
     """Этот метод подсчитывает среднюю зарплату для всех вакансий и указанных, а так же их количество
 
-    :param vacancies: список вакансий
+    :param vacancies_by_years: список вакансий
     :param name: имя вакансии
     :return:
     """
     statistics_by_years = {}
     vacancies_count_by_years, vacancies_salary_by_years, \
     vacancies_count_by_years_for_name, vacancies_salary_by_years_for_name = {}, {}, {}, {}
-    for key in vacancies.keys():
-        vacancies_count_by_years.update({key: len(vacancies[key])})
+    for key in vacancies_by_years.keys():
+        vacancies_count_by_years.update({key: len(vacancies_by_years[key])})
         vacancies_salary_by_years.update({key: int(
-            sum(x.salary_average * currency_to_rub[x.salary_currency] for x in vacancies[key]) / vacancies_count_by_years[
+            sum(x.salary_average for x in vacancies_by_years[key]) / vacancies_count_by_years[
                 key])})
-        vacancies_count_by_years_for_name.update({key: len(list(filter(lambda x: (name in x.name), vacancies[key])))})
+        vacancies_count_by_years_for_name.update({key: len(list(filter(lambda x: (name in x.name), vacancies_by_years[key])))})
         if vacancies_count_by_years_for_name[key] == 0:
             vacancies_salary_by_years_for_name.update({key: 0})
         else:
             vacancies_salary_by_years_for_name.update({key: int(sum(
-                x.salary_average * currency_to_rub[x.salary_currency] for x in
-                list(filter(lambda x: (name in x.name), vacancies[key]))) / vacancies_count_by_years_for_name[key])})
+                x.salary_average for x in
+                list(filter(lambda x: (name in x.name), vacancies_by_years[key]))) / vacancies_count_by_years_for_name[key])})
         statistics_by_years.update({key: [vacancies_salary_by_years[key], vacancies_salary_by_years_for_name[key],
                                           vacancies_count_by_years[key], vacancies_count_by_years_for_name[key]]})
     return statistics_by_years
@@ -422,7 +445,7 @@ def get_statistic_by_cities(vacancies_city):
     for key in vacancies_city.keys():
         vacancies_salary_by_city.update(
             {key: int(
-                sum(map(lambda x: x.salary_average * currency_to_rub[x.salary_currency], vacancies_city[key])) / len(
+                sum(map(lambda x: x.salary_average, vacancies_city[key])) / len(
                     vacancies_city[key]))})
         vacancies_proportion_by_city.update({key: float(len(vacancies_city[key]) / vacancies_count)})
         statistics_by_cities.update(
@@ -430,7 +453,7 @@ def get_statistic_by_cities(vacancies_city):
 
     return statistics_by_cities
 
-def generate_statistic_by_years(filename, name, q):
+def generate_statistic_by_years(vacancies_by_years, name, q):
     """Метод который обрабатывается отдельным процессом для каждого файла,
     вычисляет статистику по годам, и сохраняет данные по городам.
 
@@ -439,9 +462,12 @@ def generate_statistic_by_years(filename, name, q):
     :param q:
     :return:
     """
+
+    q.put(get_statistic_by_years(vacancies_by_years, name))
+
+def read_chunks(filename, q):
     parsed = csv_parser(filename)
-    q.put(get_statistic_by_years(parsed[0], name))
-    q.put(parsed[1], block=True)
+    q.put(parsed)
 
 if __name__ == '__main__':
     filename, name = input("Введите название файла: "), input("Введите название профессии: ")
@@ -455,28 +481,49 @@ if __name__ == '__main__':
     """
     files = [f for f in listdir(filename) if isfile(join(filename, f))]
     processes = []
-    vacancies_city = {}
+    statistic_by_city = {}
     for file in files:
         manager = Manager()
         q = manager.Queue()
         # if os is win then change / to \\
-        p = Process(target=generate_statistic_by_years, args=(filename+'/'+file, name,q))
+        p = Process(target=read_chunks, args=(filename+'/'+file, q))
         processes.append((p, q))
         p.start()
 
     # region
     """Обработка данных по городам и формирование статистики по ним
     """
-    statistics_by_years = {}
+    statistic_by_years = {}
+    vacancies_by_years = {}
+    vacancies_by_cities = {}
     for i in range(len(processes)):
         processes[i][0].join()
-        data_for_year = processes[i][1].get()
-        data_for_cities = processes[i][1].get()
+        data = processes[i][1].get()
+        vacancies_by_years = union_dict(vacancies_by_years, data[0])
+        vacancies_by_cities = union_dict(vacancies_by_cities, data[1])
 
-        vacancies_city = union_dict(vacancies_city, data_for_cities)
-        statistics_by_years.update(data_for_year)
+    vacancies_by_years = throw_low_quantity_currencies(vacancies_by_years)
 
-    statistics_by_cities = get_statistic_by_cities(vacancies_city)
+    processes.clear()
+    for year in vacancies_by_years.keys():
+        manager = Manager()
+        q = manager.Queue()
+        # if os is win then change / to \\
+        p = Process(target=generate_statistic_by_years, args=(vacancies_by_years, name,q))
+        processes.append((p, q))
+        p.start()
+
+    for process in processes:
+        process[0].join()
+        data = process[1].get()
+
+        # data_for_year = processes[i][1].get()
+        # data_for_cities = processes[i][1].get()
+        #
+        # statistic_by_city = union_dict(statistic_by_city, data_for_cities)
+        statistic_by_years.update(data)
+
+    statistics_by_cities = get_statistic_by_cities(vacancies_by_cities)
     vacancies_salary_by_city = dict(map(lambda x: (x, statistics_by_cities[x][0]), statistics_by_cities))
     vacancies_proportion_by_city = dict(map(lambda x: (x, statistics_by_cities[x][1]), statistics_by_cities))
     # endregion
@@ -485,17 +532,17 @@ if __name__ == '__main__':
     """
     temp = '\''
     print(f"Динамика уровня зарплат по годам: "
-          + str(dict(map(lambda x: (x, statistics_by_years[x][0]),
-                         statistics_by_years))).replace(temp, ''))
+          + str(dict(map(lambda x: (x, statistic_by_years[x][0]),
+                         statistic_by_years))).replace(temp, ''))
     print("Динамика количества вакансий по годам: "
-          + str(dict(map(lambda x: (x, statistics_by_years[x][2]),
-                         statistics_by_years))).replace(temp, ''))
+          + str(dict(map(lambda x: (x, statistic_by_years[x][2]),
+                         statistic_by_years))).replace(temp, ''))
     print("Динамика уровня зарплат по годам для выбранной профессии: "
-          + str(dict(map(lambda x: (x, statistics_by_years[x][1]),
-                         statistics_by_years))).replace(temp, ''))
+          + str(dict(map(lambda x: (x, statistic_by_years[x][1]),
+                         statistic_by_years))).replace(temp, ''))
     print("Динамика количества вакансий по годам для выбранной профессии: "
-          + str(dict(map(lambda x: (x, statistics_by_years[x][3]),
-                         statistics_by_years))).replace(temp, ''))
+          + str(dict(map(lambda x: (x, statistic_by_years[x][3]),
+                         statistic_by_years))).replace(temp, ''))
 
     vacancies_salary_by_city = {k: v for k, v in
                                 sorted(vacancies_salary_by_city.items(),
